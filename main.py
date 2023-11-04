@@ -1,7 +1,12 @@
 import torch as T
 from argparse import ArgumentParser
 from src.preprocessing import ParticipantData
-def main():
+
+def main(args):
+    ParticipantData(path=args.root_path)
+
+if __name__ == "__main__":
+
     parser = ArgumentParser(description='[Pecan Street Dataport] Forecasting the energy consumption of Pecan Street')
     parser.add_argument('--debug', type=bool, default=False)
     parser.add_argument('--debug_percent', type=float, default=0.2378)
@@ -35,6 +40,4 @@ def main():
     args.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
     args.gpu = T.cuda.device_count()
 
-    ParticipantData(path=args.root_path)
-if __name__ == "__main__":
-    main()
+    main(args=args)

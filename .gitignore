@@ -1,3 +1,6 @@
 /data/
+/wandb/
+/FLEnergyConsumption/
 .idea
 *.pyc
+*.ckpt

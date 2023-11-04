@@ -1,7 +1,8 @@
 import pandas as pd
 import os
 from tqdm import tqdm
-def create_sequences(input_data:pd.DataFrame, target_column, sequence_lenght):
+
+def create_sequences(input_data: pd.DataFrame, target_column, sequence_lenght):
     sequences = []
     data_size = len(input_data)
 

@@ -12,25 +12,17 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 class ParticipantData:
-    def __init__(self, path: str):
+    def __init__(self, path: str, _id: int):
         self.path = path
         if not Path(f'{self.path}/pecanstreet/aggregate/').exists():
-            self.readings = self.aggregate_features(path=f'{self.path}/pecanstreet/')
+            self.readings = self.aggregate_features(path=f'{self.path}/pecanstreet/', _id=_id)
         else:
-            self.readings = self.catch_data(f'{self.path}/pecanstreet/aggregate/')
-        print(self.readings)
+            self.readings = self.catch_data(path=f'{self.path}/pecanstreet/aggregate/15min', _id=_id)
+
 
     @classmethod
-    def catch_data(cls, path: str = f'data/pecanstreet/aggregate/') -> List:
-        files = glob.glob(f'{path}/15min/*.csv')
-        assert len(files) == 25, BufferError("[!] - Error in finding all readings data (25 participants)")
-        readings = []
-        for _file in files:
-            _id =  int(_file.split('\\')[1].replace('.csv', ''))
-            readings.append({
-                "_id": _id, "data": pd.DataFrame(_file)
-            })
-        return readings
+    def catch_data(cls, _id: int, path: str = f'data/pecanstreet/aggregate/'):
+        return {"_id": _id, "data": pd.read_csv(f"{path}/{str(_id)}.csv")}
     @staticmethod
     def init_weather_readings(path: str = 'data/pecanstreet/') -> pd.DataFrame:
         try:
@@ -131,59 +123,60 @@ class ParticipantData:
 
 
     @classmethod
-    def aggregate_features(cls, path: str = 'data/pecanstreet/') -> List:
+    def aggregate_features(cls, _id: int, path: str = 'data/pecanstreet/'):
         weather_df = cls.init_weather_readings(path)
-        readings = []
-        files = glob.glob(f'{path}/15min/*.csv')
-        for _file in files:
-            features_df, _id = cls.preprocess_readings(data_path=_file, weather_df=weather_df)
-            mkdir_if_not_exists(f"{path}/aggregate/")
-            mkdir_if_not_exists(f"{path}/aggregate/15min")
-            del features_df['date'], features_df['hour']
-            features_df.to_csv(f"{path}/aggregate/15min/{_id}.csv",index=False)
-            readings.append({"_id": _id, "data": features_df})
-        return readings
+
+        features_df, _id = cls.preprocess_readings(data_path=f"{path}/15min/{str(_id)}.str", weather_df=weather_df)
+        mkdir_if_not_exists(f"{path}/aggregate/")
+        mkdir_if_not_exists(f"{path}/aggregate/15min")
+        del features_df['date'], features_df['hour']
+        features_df.to_csv(f"{path}/aggregate/15min/{_id}.csv",index=False)
+        return {"_id": _id, "data": features_df}
 
 class Participant(ParticipantData):
-    def __init__(self, path: str, sequence_length: int = 60):
-        super(Participant, self).__init__(path=path)
+    def __init__(self, path: str, _id: int, sequence_length: int = 60):
+        super(Participant, self).__init__(path=path, _id=_id)
         self.path = path
         self.sequence_length = sequence_length
-        for i, read in enumerate(self.readings):
-            self.preprocess(read, i)
-    def preprocess(self, df, idx):
-        self.features_df = df
-        self.original_data = df.copy()
+        self.readings = self.preprocess(readings=self.readings, sequence_length=sequence_length)
+
+    @staticmethod
+    def preprocess(readings, sequence_length: int = 60):
+        df = readings['data']
+        original_data = df.copy()
         n = len(df)
 
-        self.n_features = len(df.columns.to_list())
+        n_features = len(original_data.columns.to_list())
 
-        self.train_df = df[0: int(n * .7)]
-        self.val_df = df[int(n * .7): int(n * (1.1 - .2))]
-        self.test_df = df[int(n * (1.0 - .1)):]
+        train_df = df[0: int(n * .7)]
+        val_df = df[int(n * .7): int(n * (1.1 - .2))]
+        test_df = df[int(n * (1.0 - .1)):]
 
-        self.scaler = self.scaler.fit(df)
+        scaler = MinMaxScaler(feature_range=(-1,1))
+        scaler = scaler.fit(df)
 
 
-        self.train_df = pd.DataFrame(
-            self.scaler.transform(self.train_df),
-            index=self.train_df.index,
-            columns=self.train_df.columns
+        train_df = pd.DataFrame(
+            scaler.transform(train_df),
+            index=train_df.index,
+            columns=train_df.columns
         )
 
-        self.val_df = pd.DataFrame(
-            self.scaler.transform(self.val_df),
-            index=self.val_df.index,
-            columns=self.val_df.columns
+        val_df = pd.DataFrame(
+            scaler.transform(val_df),
+            index=val_df.index,
+            columns=val_df.columns
         )
 
-        self.test_df = pd.DataFrame(
-            self.scaler.transform(self.test_df),
-            index=self.test_df.index,
-            columns=self.test_df.columns
+        test_df = pd.DataFrame(
+            scaler.transform(test_df),
+            index=test_df.index,
+            columns=test_df.columns
         )
 
-        self.readings[idx]['train_sequence'] = create_sequences(self.train_df, 'consumption', self.sequence_length)
-        self.readings[idx]['val_sequence'] = create_sequences(self.val_df, 'consumption', self.sequence_length)
-        self.readings[idx]['test_sequence'] = create_sequences(self.test_df, 'consumption', self.sequence_length)
-        self.readings[idx]['scaler'] = self.scaler
+        readings['train_sequence'] = create_sequences(train_df, 'consumption', sequence_length)
+        readings['val_sequence'] = create_sequences(val_df, 'consumption', sequence_length)
+        readings['test_sequence'] = create_sequences(test_df, 'consumption', sequence_length)
+        readings['scaler'] = scaler
+        readings['n_features'] = n_features
+        return readings
