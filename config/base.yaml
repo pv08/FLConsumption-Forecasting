@@ -1,0 +1,23 @@
+---
+
+
+debug: False
+debug_percent: 0.2378
+sequence_length: 60
+seed: 2023)
+root_path: 'data/'
+n_hidden: 256
+n_layers: 3
+dropout: 0.2
+lr: 1e-5
+momentum: 9
+num_workers: 1
+batch_size: 32
+n_epochs: 201
+early_stopping: False
+patience: 2
+num_rounds: 10
+num_clients: 100
+num_clients_per_round_fit: 10
+num_clients_per_round_eval: 25
+strategy: fedavg
