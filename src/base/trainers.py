@@ -14,7 +14,7 @@ from src.models.mlp import MLP
 from src.models.rnn_autoencoder import DualAttentionAutoEncoder
 from tqdm import tqdm
 from typing import *
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, mean_pinball_loss
 from src.utils.functions import *
 
 
@@ -76,6 +76,7 @@ class Trainers:
         rmse = math.sqrt(mse)
         mae = mean_absolute_error(y_true, y_pred)
         r2 = r2_score(y_true, y_pred)
+        mean_pinball = mean_pinball_loss(y_true, y_pred, alpha=1)
 
 
         y_true_first_dim = y_true[:, dims[0]]
@@ -99,8 +100,8 @@ class Trainers:
         if log_per_output:
             res = cls.log_metrics(y_true, y_pred)
             if return_all:
-                return mse, rmse, mae, r2, nrmse, res
-        return mse, rmse, mae, r2, nrmse
+                return mse, rmse, mae, r2, nrmse,mean_pinball, res
+        return mse, rmse, mae, r2, nrmse, mean_pinball
 
 
 
@@ -127,10 +128,10 @@ class Trainers:
 
         y_true = T.stack(y_true)
         y_pred = T.stack(y_pred)
-        mse, rmse, mae, r2, nrmse = cls.accumulate_metrics(y_true.cpu(), y_pred.cpu())
+        mse, rmse, mae, r2, nrmse, mean_pinball = cls.accumulate_metrics(y_true.cpu(), y_pred.cpu())
         if criterion is None:
-            return mse, rmse, mae, r2, nrmse, y_pred
-        return loss, mse, rmse, mae, r2, nrmse
+            return mse, rmse, mae, r2, nrmse, mean_pinball, y_pred
+        return loss, mse, rmse, mae, r2, nrmse, mean_pinball
 
     @classmethod
     def train(cls, model: nn.Module, cid: str, train_loader: DataLoader, test_loader: DataLoader, epochs: int=10, optimizer: str="adam",
@@ -139,7 +140,7 @@ class Trainers:
               log_per: int=1, use_carbontracker: bool=False, fl_round=0):
         best_model, best_loss, best_epoch = None, -1, -1
         train_loss_history, train_rmse_history = [], []
-        test_loss_history, test_rmse_history = [], []
+        test_loss_history, test_rmse_history, test_pinball_history = [], [], []
         if early_stopping:
             es_trace = True if log_per == 1 else False
             monitor = EarlyStopping(patience=patience, trace=es_trace)
@@ -167,9 +168,9 @@ class Trainers:
                 epochs_loss.append(loss.item())
 
             train_loss = sum(epochs_loss) / len(epochs_loss)
-            _, train_mse, train_rmse, train_mae, train_r2, train_nrmse = cls.test(model, train_loader,
+            _, train_mse, train_rmse, train_mae, train_r2, train_nrmse, train_pinball = cls.test(model, train_loader,
                                                                               criterion, device)
-            test_loss, test_mse, test_rmse, test_mae, test_r2, test_nrmse = cls.test(model, test_loader,
+            test_loss, test_mse, test_rmse, test_mae, test_r2, test_nrmse, test_pinball = cls.test(model, test_loader,
                                                                                  criterion, device)
             log(INFO, f"Participant: {cid} | Epoch {epoch + 1}/{epochs} | [Train]: loss {train_loss}, mse: {train_mse} | [Test]: loss {test_loss}, mse: {test_mse}")
             # wandb_logger.log({'cid': cid, 'epoch': epoch + 1, 'train_loss': train_loss, 'train_mse': train_mse, 'test_loss': test_loss, 'test_mse': test_mse})
@@ -177,6 +178,7 @@ class Trainers:
             train_rmse_history.append(train_rmse)
             test_loss_history.append(test_mse)
             test_rmse_history.append(test_rmse)
+            test_pinball_history.append(test_pinball)
 
 
             if early_stopping:

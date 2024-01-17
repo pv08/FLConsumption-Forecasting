@@ -13,6 +13,7 @@ from collections import OrderedDict
 from src.data import TimeSeriesLoader
 
 
+
 def set_parameters(model, parameters):
     params_dict = zip(model.state_dict().keys(), parameters)
     state_dict = OrderedDict({k: T.Tensor(v) for k, v in params_dict})
@@ -158,9 +159,18 @@ class FlowerClient(NumPyClient):
         print(f"[Client {self.cid}] evaluate")
         set_parameters(self.net, parameters)
         criterion = trainers.get_criterion(args.criterion)
-        loss, mse, rmse, mae, r2, nrmse = trainers.test(model=self.net, data=self.valloader, criterion=criterion)
-        log(INFO, f'MSE: {float(mse)}')
-        return float(loss), len(self.valloader), {'mse': float(mse)}
+        loss, mse, rmse, mae, r2, nrmse, pinball = trainers.test(model=self.net, data=self.valloader, criterion=criterion)
+        results = {
+            'loss': float(loss),
+            'mse': float(mse),
+            'mae': float(mae),
+            'rmse': float(rmse),
+            'r2': float(r2),
+            'pinball': float(pinball)
+        }
+        log(INFO, f'results: {results}')
+
+        return float(loss), len(self.valloader), results
 
 def numpyclient_fn(_idx):
 
@@ -179,23 +189,82 @@ def numpyclient_fn(_idx):
 
 def weighted_average(metrics):
     # Multiply accuracy of each client by number of examples used
-    mses = [num_examples * m["mse"] for num_examples, m in metrics]
-    examples = [num_examples for num_examples, _ in metrics]
-    weighted_mse = sum(mses) / sum(examples)
+    print(metrics)
+    examples = sum(num_examples for num_examples, _ in metrics)
+    values = {
+        'loss': 0,
+        'mse': 0,
+        'mae': 0,
+        'rmse': 0,
+        'r2': 0,
+        'pinball': 0
+
+    }
+    for num_examples, results in metrics:
+        for key, value in results.items():
+            values[key] += value * num_examples
+    for key, value in values.items():
+        values[key] /= examples
+
+    # mses = [num_examples * m["mse"] for num_examples, m in metrics]
+    # examples = [num_examples for num_examples, _ in metrics]
+    # weighted_mse = sum(mses) / sum(examples)
     # Aggregate and return custom metric (weighted average)
-    history.add_global_test_metrics({'MSE': weighted_mse})
-    return {"mse": weighted_mse}
+    history.add_global_test_metrics(values)
+    return values
 
+global_model = trainers.get_model(model=args.model_name,
+                             input_dim=input_dim,
+                             out_dim=y_train.shape[1],
+                             lags=args.num_lags,
+                             exogenous_dim=exogenous_dim,
+                             seed=args.seed)
+class SaveModelStrategy(fl.server.strategy.FedAvg):
+    def __init__(self, evaluate_metrics_aggregation_fn):
+        super(SaveModelStrategy, self).__init__(
+            fraction_fit=0.1,
+            fraction_evaluate=0.1,
+            min_fit_clients=2,
+            min_evaluate_clients=2,
+            min_available_clients=5,
+            evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn)
+    def aggregate_fit(
+        self,
+        server_round: int,
+        results,
+        failures,
+    ):
+        """Aggregate model weights using weighted average and store checkpoint"""
 
+        # Call aggregate_fit from base class (FedAvg) to aggregate parameters and metrics
+        aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
 
-strategy = fl.server.strategy.FedAvg(
-        fraction_fit=0.1,
-        fraction_evaluate=0.1,
-        min_fit_clients=2,
-        min_evaluate_clients=2,
-        min_available_clients=5,
-        evaluate_metrics_aggregation_fn=weighted_average
-    )
+        if aggregated_parameters is not None:
+            print(f"Saving round {server_round} aggregated_parameters...")
+
+            # Convert `Parameters` to `List[np.ndarray]`
+            aggregated_ndarrays = fl.common.parameters_to_ndarrays(aggregated_parameters)
+
+            # Convert `List[np.ndarray]` to PyTorch`state_dict`
+            params_dict = zip(global_model.state_dict().keys(), aggregated_ndarrays)
+            state_dict = OrderedDict({k: T.tensor(v) for k, v in params_dict})
+            global_model.load_state_dict(state_dict, strict=True)
+
+            # Save the model
+            T.save(global_model.state_dict(), f"model_round_{server_round}.pth")
+
+        return aggregated_parameters, aggregated_metrics
+
+strategy=SaveModelStrategy(evaluate_metrics_aggregation_fn=weighted_average)
+
+# strategy = fl.server.strategy.FedAvg(
+#         fraction_fit=0.1,
+#         fraction_evaluate=0.1,
+#         min_fit_clients=2,
+#         min_evaluate_clients=2,
+#         min_available_clients=5,
+#         evaluate_metrics_aggregation_fn=weighted_average
+#     )
 
 fl_history = fl.simulation.start_simulation(
     client_fn=numpyclient_fn,
@@ -206,5 +275,6 @@ fl_history = fl.simulation.start_simulation(
 )
 print(fl_history)
 print(history)
+history.save_in_json(model_name=args.model_name)
 
 # fl.client.start_numpy_client(server_address="127.0.0.1:8080", client=FlowerClient())

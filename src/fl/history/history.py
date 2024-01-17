@@ -82,25 +82,26 @@ class History:
                 self.global_test_metrics[key] = []
             self.global_test_metrics[key].append(averaged_metrics[key])
 
-    def save_in_json(self):
+    def save_in_json(self, model_name):
         mkdir_if_not_exists('etc/')
         mkdir_if_not_exists('etc/results/')
+        mkdir_if_not_exists(f'etc/results/{model_name}/')
 
         log(INFO, f"Saving global test results...")
-        save_json_file(f'etc/results/global_test_losses.json', self.global_test_losses)
-        save_json_file(f'etc/results/global_test_metrics.json', self.global_test_metrics)
+        save_json_file(f'etc/results/{model_name}/global_test_losses.json', self.global_test_losses)
+        save_json_file(f'etc/results/{model_name}/global_test_metrics.json', self.global_test_metrics)
 
         log(INFO, f"Saving global train results...")
-        save_json_file(f'etc/results/global_train_losses.json', self.global_train_losses)
-        save_json_file(f'etc/results/global_train_metrics.json', self.global_train_metrics)
+        save_json_file(f'etc/results/{model_name}/global_train_losses.json', self.global_train_losses)
+        save_json_file(f'etc/results/{model_name}/global_train_metrics.json', self.global_train_metrics)
 
         log(INFO, f"Saving local test results...")
-        save_json_file(f'etc/results/local_test_losses.json', self.local_test_losses)
-        save_json_file(f'etc/results/local_test_metrics.json', self.local_test_metrics)
+        save_json_file(f'etc/results/{model_name}/local_test_losses.json', self.local_test_losses)
+        save_json_file(f'etc/results/{model_name}/local_test_metrics.json', self.local_test_metrics)
 
         log(INFO, f"Saving local train results...")
-        save_json_file(f'etc/results/local_train_losses.json', self.local_train_losses)
-        save_json_file(f'etc/results/local_train_metrics.json', self.local_train_metrics)
+        save_json_file(f'etc/results/{model_name}/local_train_losses.json', self.local_train_losses)
+        save_json_file(f'etc/results/{model_name}/local_train_metrics.json', self.local_train_metrics)
         log(INFO, f"Saving process done...")
 
 
