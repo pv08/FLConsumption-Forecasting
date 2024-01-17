@@ -3,4 +3,5 @@
 /FLEnergyConsumption/
 .idea
 *.pyc
+*.csv
 *.ckpt

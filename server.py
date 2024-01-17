@@ -1,19 +1,24 @@
 import flwr as fl
 import torch as T
 from argparse import ArgumentParser
+
+def weighted_avg(metrics):
+    mses = [num_examples * m['mse'] for num_examples, m in metrics]
+    examples = [num_examples for num_examples, _ in metrics]
+
+    return {"mse": sum(mses)/sum(examples)}
 def main(args):
-
-
-    strategy = fl.server.strategy.FedAvg(
-        fraction_fit=0.5,
-        fraction_evaluate=0.5,
-    )
 
     # Start Flower server for three rounds of federated learning
     fl.server.start_server(
-        server_address="192.168.1.13:8085",
-        config=fl.server.ServerConfig(num_rounds=3),
-        strategy=strategy,
+        server_address="0.0.0.0:8080",
+        config=fl.server.ServerConfig(num_rounds=10),
+        strategy=fl.server.strategy.FedAvg(
+            fraction_fit=0.2,
+            fraction_evaluate=0.2,
+            min_fit_clients=2,
+            min_evaluate_clients=2,
+            min_available_clients=5, evaluate_metrics_aggregation_fn=weighted_avg)
     )
 
 

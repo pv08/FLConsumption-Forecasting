@@ -1,23 +1,9 @@
 import torch as T
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
 from flwr.client import NumPyClient
 from collections import OrderedDict
 
 
 class FlowerClient(NumPyClient):
-    def __init__(self, regressor, train_loader, val_loader, test_loader, device, _id):
-        super(FlowerClient, self).__init__()
-        self.regressor = regressor
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.test_loader = test_loader
-        self.device = device
-        self.logger_master = WandbLogger(project='FLEnergyConsumption',
-                                         tags=['pecanstreet', 'train', 'FederatedLearning', 'RNN', str(_id)],
-                                         offline=False,
-                                         name=f'participant_{str(_id)}')
-
     def get_parameters(self, config):
         return [v.cpu().numpy() for _, v in self.regressor.model.state_dict().items()]
 
