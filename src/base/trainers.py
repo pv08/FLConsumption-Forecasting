@@ -130,7 +130,7 @@ class Trainers:
         y_pred = T.stack(y_pred)
         mse, rmse, mae, r2, nrmse, mean_pinball = cls.accumulate_metrics(y_true.cpu(), y_pred.cpu())
         if criterion is None:
-            return mse, rmse, mae, r2, nrmse, mean_pinball, y_pred
+            return mse, rmse, mae, r2, nrmse, mean_pinball, y_pred.cpu()
         return loss, mse, rmse, mae, r2, nrmse, mean_pinball
 
     @classmethod

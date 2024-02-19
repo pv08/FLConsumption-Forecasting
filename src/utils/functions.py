@@ -101,3 +101,16 @@ def plot_local_train_rounds(history):
     plt.savefig(f'etc/results/imgs/training_times.png')
     plt.close()
 
+def plot_test_prediction(y_true, y_pred, cid, model_name):
+    mkdir_if_not_exists('etc/')
+    mkdir_if_not_exists('etc/results/')
+    mkdir_if_not_exists('etc/results/imgs/')
+    mkdir_if_not_exists(f'etc/results/imgs/{model_name}')
+    mkdir_if_not_exists(f'etc/results/imgs/{model_name}/preds/')
+    plt.title(f"Prediction of {cid}")
+    plt.plot(y_true, label='True')
+    plt.plot(y_pred, label='Predicted')
+    plt.legend()
+    plt.savefig(f'etc/results/imgs/{model_name}/preds/{cid}.png')
+    plt.close()
+

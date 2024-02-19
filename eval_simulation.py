@@ -126,158 +126,18 @@ cids = [k for k in client_X_train.keys() if k != 'all']
 log(INFO, f"Trainable clients: {cids}")
 
 
-class FlowerClient(NumPyClient):
-    def __init__(self, _idx, cid, net, trainloader, valloader):
-        self._idx = _idx
-        self.cid = cid
-        self.net = net
-        self.trainloader = trainloader
-        self.valloader = valloader
-
-    def get_parameters(self, config):
-        return get_parameters(self.net)
-
-
-    def fit(self, parameters, config):
-        log(INFO, f"Fitting client {self.cid}...")
-        print(f"[Client {self.cid}] fit, config: {config}")
-        set_parameters(self.net, parameters)
-        trainers.train(model=self.net,
-                      train_loader=self.trainloader, test_loader=self.valloader,
-                      epochs=args.epochs,
-                      optimizer=args.optimizer, lr=args.lr,
-                      criterion=args.criterion,
-                      early_stopping=args.early_stopping,
-                      patience=args.patience,
-                      device=args.device, cid=self.cid)
-
-
-
-        return self.get_parameters({}), len(self.trainloader), {}
-
-    def evaluate(
-        self, parameters: NDArrays, config: Dict[str, Scalar]
-    ) -> Tuple[float, int, Dict[str, Scalar]]:
-        print(f"[Client {self.cid}] evaluate")
-        set_parameters(self.net, parameters)
-        criterion = trainers.get_criterion(args.criterion)
-        loss, mse, rmse, mae, r2, nrmse, pinball = trainers.test(model=self.net, data=self.valloader, criterion=criterion)
-        results = {
-            'loss': float(loss),
-            'mse': float(mse),
-            'mae': float(mae),
-            'rmse': float(rmse),
-            'r2': float(r2),
-            'pinball': float(pinball)
-        }
-        log(INFO, f'results: {results}')
-
-        return float(loss), len(self.valloader), results
-
-def numpyclient_fn(_idx):
-
-    net = trainers.get_model(model=args.model_name,
+model = trainers.get_model(model=args.model_name,
                              input_dim=input_dim,
                              out_dim=y_train.shape[1],
                              lags=args.num_lags,
                              exogenous_dim=exogenous_dim,
                              seed=args.seed)
 
-    cid, trainloader = train_loaders[int(_idx)]
-    cid, valloader = val_loaders[int(_idx)]
-    log(INFO, f'Assigning client {_idx} representing {cid}...')
-    return FlowerClient(_idx=_idx, cid=cid, net=net, trainloader=trainloader, valloader=valloader)
+state_dict = T.load('model_round_10.pth')
+model.load_state_dict(state_dict)
+state_dict_ndarrays = [v.cpu().numpy() for v in model.state_dict().values()]
+parameters = fl.common.ndarrays_to_parameters(state_dict_ndarrays)
 
-
-def weighted_average(metrics):
-    # Multiply accuracy of each client by number of examples used
-    print(metrics)
-    examples = sum(num_examples for num_examples, _ in metrics)
-    values = {
-        'loss': 0,
-        'mse': 0,
-        'mae': 0,
-        'rmse': 0,
-        'r2': 0,
-        'pinball': 0
-
-    }
-    for num_examples, results in metrics:
-        for key, value in results.items():
-            values[key] += value * num_examples
-    for key, value in values.items():
-        values[key] /= examples
-
-    # mses = [num_examples * m["mse"] for num_examples, m in metrics]
-    # examples = [num_examples for num_examples, _ in metrics]
-    # weighted_mse = sum(mses) / sum(examples)
-    # Aggregate and return custom metric (weighted average)
-    history.add_global_test_metrics(values)
-    return values
-
-global_model = trainers.get_model(model=args.model_name,
-                             input_dim=input_dim,
-                             out_dim=y_train.shape[1],
-                             lags=args.num_lags,
-                             exogenous_dim=exogenous_dim,
-                             seed=args.seed)
-class SaveModelStrategy(fl.server.strategy.FedAvg):
-    def __init__(self, evaluate_metrics_aggregation_fn):
-        super(SaveModelStrategy, self).__init__(
-            fraction_fit=0.25,
-            fraction_evaluate=0.25,
-            min_fit_clients=2,
-            min_evaluate_clients=2,
-            min_available_clients=5,
-            evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn)
-    def aggregate_fit(
-        self,
-        server_round: int,
-        results,
-        failures,
-    ):
-        """Aggregate model weights using weighted average and store checkpoint"""
-
-        # Call aggregate_fit from base class (FedAvg) to aggregate parameters and metrics
-        aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
-
-        if aggregated_parameters is not None:
-            print(f"Saving round {server_round} aggregated_parameters...")
-
-            # Convert `Parameters` to `List[np.ndarray]`
-            aggregated_ndarrays = fl.common.parameters_to_ndarrays(aggregated_parameters)
-
-            # Convert `List[np.ndarray]` to PyTorch`state_dict`
-            params_dict = zip(global_model.state_dict().keys(), aggregated_ndarrays)
-            state_dict = OrderedDict({k: T.tensor(v) for k, v in params_dict})
-            global_model.load_state_dict(state_dict, strict=True)
-
-            # Save the model
-            T.save(global_model.state_dict(), f"model_round_{server_round}.pth")
-
-        return aggregated_parameters, aggregated_metrics
-
-strategy=SaveModelStrategy(evaluate_metrics_aggregation_fn=weighted_average)
-
-# strategy = fl.server.strategy.FedAvg(
-#         fraction_fit=0.1,
-#         fraction_evaluate=0.1,
-#         min_fit_clients=2,
-#         min_evaluate_clients=2,
-#         min_available_clients=5,
-#         evaluate_metrics_aggregation_fn=weighted_average
-#     )
-
-fl_history = fl.simulation.start_simulation(
-    client_fn=numpyclient_fn,
-    num_clients=25,
-    config=fl.server.ServerConfig(num_rounds=args.fl_rounds),
-    client_resources={"num_gpus": 1},
-    strategy=strategy
-)
-print(fl_history)
-print(history)
-history.save_in_json(model_name=args.model_name)
 
 evaluate_metrics = []
 for client in cids:
@@ -288,8 +148,7 @@ for client in cids:
                                    num_features=num_features, exogenous_data=None,
                                    indices=[0], batch_size=1, shuffle=False, cid=client).get_dataloader()
     test_mse, test_rmse, test_mae, test_r2, test_nrmse, test_pinball, y_pred_test = Trainers(args=args).test(
-        global_model, test_loader, None, device=args.device
-    )
+        model, test_loader, None, device=args.device)
     evaluate_metrics.append({'cid': client, 'mse': test_mse, 'mae': test_mae, 'r2': test_r2, 'pinball': test_pinball})
     log(INFO, f"Client: {client} | MSE: {test_mse} | MAE: {test_mae} | pinball loss: {test_pinball}")
     plot_test_prediction(y_true=client_y_test[client], y_pred=y_pred_test, cid=client, model_name=args.model_name)
